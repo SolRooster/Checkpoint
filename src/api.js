@@ -1,4 +1,6 @@
 // Dev runs against the Vite middleware + localStorage; production against the Worker.
+import { buildRules, buildPool, drawGame, slimGame } from '../shared/draw.js';
+
 const WORKER_URL = 'https://checkpoint-webhook.roster-support.workers.dev';
 const DEV = import.meta.env.DEV;
 
@@ -22,7 +24,12 @@ async function post(path, body) {
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  if (!res.ok) {
+    const err = new Error(data.error || `Request failed (${res.status})`);
+    err.status = res.status;
+    err.cycle = data.cycle;
+    throw err;
+  }
   return data;
 }
 
@@ -68,13 +75,41 @@ export async function getCycle() {
   return (await res.json()).cycle;
 }
 
-export async function lockInDraw(payload) {
+// One shot per cycle: the Worker owns the roll so the browser can't reroll.
+export async function drawCycle(drawnBy) {
   if (DEV) {
-    const cycle = { ...payload, drawnAt: new Date().toISOString() };
+    if (readLocal(LOCAL_CYCLE, null)) {
+      const err = new Error('This cycle has already been drawn.');
+      err.status = 409;
+      err.cycle = readLocal(LOCAL_CYCLE, null);
+      throw err;
+    }
+    const catalog = await getCatalog();
+    const rules = buildRules(await getInterests());
+    const pool = buildPool(catalog.games, rules);
+    if (!pool.length) throw new Error('No games everyone can play. Loosen the vetoes.');
+
+    const result = drawGame(pool, rules);
+    const cycle = {
+      game: slimGame(result.game),
+      poolSize: result.poolSize,
+      reasons: result.reasons,
+      drawnBy: drawnBy || 'someone',
+      drawnAt: new Date().toISOString(),
+    };
     localStorage.setItem(LOCAL_CYCLE, JSON.stringify(cycle));
     return cycle;
   }
-  return (await post('/draw', payload)).cycle;
+  return (await post('/draw', { drawnBy })).cycle;
+}
+
+export async function newCycle(by) {
+  if (DEV) {
+    localStorage.removeItem(LOCAL_CYCLE);
+    return true;
+  }
+  await post('/cycle/new', { by });
+  return true;
 }
 
 export async function postCheckIn(payload) {

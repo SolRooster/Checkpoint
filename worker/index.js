@@ -7,7 +7,8 @@
  *   CLUB                 KV namespace (interests + current cycle)
  */
 
-import { SIGLS, buildCatalog } from '../shared/catalog.js';
+import { buildCatalog } from '../shared/catalog.js';
+import { buildRules, buildPool, drawGame, slimGame } from '../shared/draw.js';
 
 const CATALOG_TTL = 60 * 60 * 12;
 
@@ -29,23 +30,15 @@ function corsHeaders(origin, allowed) {
   };
 }
 
-const chunk = (arr, n) =>
-  Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
-
-async function handleCatalog(ctx, cors) {
+async function getCatalogCached(ctx) {
   const cacheKey = new Request('https://checkpoint.internal/catalog');
   const cache = caches.default;
 
   const hit = await cache.match(cacheKey);
-  if (hit) {
-    return new Response(await hit.text(), {
-      status: 200,
-      headers: { ...cors, 'Content-Type': 'application/json' },
-    });
-  }
+  if (hit) return { body: await hit.text(), cached: true };
 
   const catalog = await buildCatalog();
-  if (!catalog.count) return json({ error: 'Catalog came back empty' }, 502, cors);
+  if (!catalog.count) return null;
 
   const body = JSON.stringify(catalog);
   ctx.waitUntil(
@@ -56,7 +49,16 @@ async function handleCatalog(ctx, cors) {
       })
     )
   );
-  return new Response(body, { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } });
+  return { body, cached: false };
+}
+
+async function handleCatalog(ctx, cors) {
+  const catalog = await getCatalogCached(ctx);
+  if (!catalog) return json({ error: 'Catalog came back empty' }, 502, cors);
+  return new Response(catalog.body, {
+    status: 200,
+    headers: { ...cors, 'Content-Type': 'application/json' },
+  });
 }
 
 async function readInterests(env) {
@@ -134,36 +136,44 @@ export default {
       return json({ cycle: raw ? JSON.parse(raw) : null }, 200, cors);
     }
 
+    // The draw happens here, not in the browser, and only once per cycle.
     if (path === '/draw' && request.method === 'POST') {
       if (!env.CLUB) return json({ error: 'KV not bound' }, 501, cors);
-      const body = await request.json().catch(() => ({}));
-      const game = body.game;
-      if (!game?.title) return json({ error: 'No game in draw' }, 400, cors);
 
+      const existing = await env.CLUB.get('cycle:current');
+      if (existing) {
+        return json(
+          { error: 'This cycle has already been drawn.', cycle: JSON.parse(existing) },
+          409,
+          cors
+        );
+      }
+
+      const body = await request.json().catch(() => ({}));
+      const catalog = await getCatalogCached(ctx);
+      if (!catalog) return json({ error: 'Catalog unavailable' }, 502, cors);
+
+      const members = await readInterests(env);
+      const rules = buildRules(members);
+      const pool = buildPool(JSON.parse(catalog.body).games, rules);
+      if (!pool.length) {
+        return json({ error: 'No games everyone can play. Loosen the vetoes.' }, 400, cors);
+      }
+
+      const result = drawGame(pool, rules);
       const cycle = {
-        game: {
-          id: clip(game.id, 40),
-          title: clip(game.title, 160),
-          dev: clip(game.dev, 120),
-          img: clip(game.img, 400),
-          cats: (game.cats || []).slice(0, 8).map((c) => clip(c, 60)),
-          play: {
-            coop: !!game.play?.coop,
-            versus: !!game.play?.versus,
-            solo: !!game.play?.solo,
-          },
-          tiers: (game.tiers || []).filter((t) => t in SIGLS),
-        },
-        poolSize: Number(body.poolSize) || 0,
-        reasons: (body.reasons || []).slice(0, 5).map((r) => clip(r, 160)),
-        drawnBy: clip(body.drawnBy, 60),
+        game: slimGame(result.game),
+        poolSize: result.poolSize,
+        reasons: result.reasons,
+        drawnBy: clip(body.drawnBy, 60) || 'someone',
         drawnAt: new Date().toISOString(),
       };
+
       await env.CLUB.put('cycle:current', JSON.stringify(cycle));
 
       if (env.DISCORD_WEBHOOK_URL) {
         await postToDiscord(env, {
-          content: '**The wheel has spoken.** This cycle\u2019s pick:',
+          content: `**The wheel has spoken.** ${cycle.drawnBy} drew this cycle\u2019s game \u2014 one shot, no rerolls:`,
           embeds: [
             {
               title: cycle.game.title,
@@ -182,6 +192,28 @@ export default {
       }
 
       return json({ ok: true, cycle }, 200, cors);
+    }
+
+    // Rerolling is possible but never quiet: it archives the pick and announces itself.
+    if (path === '/cycle/new' && request.method === 'POST') {
+      if (!env.CLUB) return json({ error: 'KV not bound' }, 501, cors);
+      const body = await request.json().catch(() => ({}));
+      const by = clip(body.by, 60) || 'someone';
+
+      const raw = await env.CLUB.get('cycle:current');
+      if (raw) await env.CLUB.put(`cycle:past:${Date.now()}`, raw);
+      await env.CLUB.delete('cycle:current');
+
+      if (env.DISCORD_WEBHOOK_URL) {
+        const previous = raw ? JSON.parse(raw).game.title : null;
+        await postToDiscord(env, {
+          content: previous
+            ? `**${by}** closed the cycle on *${previous}* and opened a new one. The next draw is live.`
+            : `**${by}** opened a new cycle. The next draw is live.`,
+        });
+      }
+
+      return json({ ok: true }, 200, cors);
     }
 
     if (path === '/checkin' && request.method === 'POST') {

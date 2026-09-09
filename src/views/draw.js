@@ -1,12 +1,81 @@
 import { esc, on } from '../dom.js';
-import { GENRES } from '../interests.js';
-import { buildRules, buildPool, drawGame, poolStats } from '../draw.js';
-import { lockInDraw } from '../api.js';
+import { genreLabel } from '../interests.js';
+import { buildRules, buildPool, poolStats } from '../draw.js';
+import { drawCycle, newCycle } from '../api.js';
 
-const labelOf = (cat) => GENRES.find((g) => g.cat === cat)?.label || cat;
 const TIER_LABEL = { console: 'Console', pc: 'PC', eaPlay: 'EA Play' };
 
+const gameCard = (game, reasons, poolSize) => `
+  <div class="result-card">
+    ${game.img ? `<img class="result-art" src="${esc(game.img)}" alt="${esc(game.title)}" />` : ''}
+    <div class="result-body">
+      <h3 class="result-title">${esc(game.title)}</h3>
+      ${game.dev ? `<div class="result-dev">${esc(game.dev)}</div>` : ''}
+      <div class="result-tags">
+        ${(game.cats || []).map((c) => `<span class="tag">${esc(genreLabel(c))}</span>`).join('')}
+        ${game.play?.coop ? '<span class="tag coop">Co-op</span>' : ''}
+        ${(game.tiers || []).map((t) => `<span class="tag tier">${esc(TIER_LABEL[t] || t)}</span>`).join('')}
+      </div>
+      ${game.blurb ? `<p class="result-blurb">${esc(game.blurb)}</p>` : ''}
+      <ul class="result-why">${(reasons || []).map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
+      ${poolSize ? `<div class="result-pool">Drawn from ${poolSize} eligible games.</div>` : ''}
+    </div>
+  </div>`;
+
 export function drawView(state, rerender) {
+  // Already drawn: the cycle is settled, and the only way out is a new cycle.
+  if (state.cycle) {
+    const { game, reasons, poolSize, drawnBy } = state.cycle;
+    return {
+      html: `
+        <section class="lead">
+          <h2 class="view-title">Already drawn</h2>
+          <p class="view-sub">
+            One shot per cycle. ${esc(drawnBy || 'Someone')} rolled it and it stands
+            &mdash; if it's not for you, play a bit and mark <b>Called It</b>.
+          </p>
+        </section>
+        <section class="result">
+          <div class="result-label">This cycle&rsquo;s pick</div>
+          ${gameCard(game, reasons, poolSize)}
+          <div class="result-actions">
+            <button id="to-checkin" class="submit">Check in</button>
+            <button id="new-cycle" class="submit ghost">Start a new cycle</button>
+          </div>
+          <p class="fine">Starting a new cycle archives this pick and announces it in #league.</p>
+          <p id="d-status" class="status"></p>
+        </section>`,
+      wire: (root) => {
+        root.querySelector('#to-checkin')?.addEventListener('click', () => {
+          state.tab = 'checkin';
+          rerender();
+        });
+
+        root.querySelector('#new-cycle')?.addEventListener('click', async (e) => {
+          const status = root.querySelector('#d-status');
+          if (!state.confirmNew) {
+            state.confirmNew = true;
+            e.currentTarget.textContent = 'Really? This is public \u2014 click again';
+            return;
+          }
+          e.currentTarget.disabled = true;
+          try {
+            await newCycle(state.myInterests.player || 'someone');
+            state.cycle = null;
+            state.confirmNew = false;
+            rerender();
+          } catch (err) {
+            status.textContent = err.message;
+            status.className = 'status err';
+            e.currentTarget.disabled = false;
+          }
+        });
+
+        on(root, '.result-art', 'error', (ev) => ev.currentTarget.remove());
+      },
+    };
+  }
+
   if (state.catalogError) {
     return {
       html: `<section class="lead"><h2 class="view-title">Catalog unavailable</h2>
@@ -38,13 +107,12 @@ export function drawView(state, rerender) {
   const stats = poolStats(games, rules);
   const vetoed = [...rules.vetoes];
 
-  const result = state.draw;
-
   const html = `
     <section class="lead">
       <h2 class="view-title">The Draw</h2>
       <p class="view-sub">
         Random, but steered. Vetoes are absolute; everything else just tilts the odds.
+        <b>You get one spin</b> &mdash; whatever lands, lands.
       </p>
     </section>
 
@@ -66,14 +134,14 @@ export function drawView(state, rerender) {
         }
         ${
           stats.blockedByAccess
-            ? `<div class="muted-line">${stats.blockedByAccess} games skipped — not everyone can play them</div>`
+            ? `<div class="muted-line">${stats.blockedByAccess} games skipped &mdash; not everyone can play them</div>`
             : rules.memberCount
               ? '<div class="rule-ok">Everyone can reach the whole catalog</div>'
               : ''
         }
         ${
           vetoed.length
-            ? `<div class="rule-veto">Vetoed: ${vetoed.map((v) => esc(labelOf(v))).join(', ')} <span>(${stats.blockedByVeto} more removed)</span></div>`
+            ? `<div class="rule-veto">Vetoed: ${vetoed.map((v) => esc(genreLabel(v))).join(', ')} <span>(${stats.blockedByVeto} more removed)</span></div>`
             : '<div class="rule-ok">No vetoes on record</div>'
         }
         ${rules.recentOnly ? '<div>Everyone wants recent releases only</div>' : ''}
@@ -84,9 +152,7 @@ export function drawView(state, rerender) {
       rules.memberCount > 1
         ? `<div class="access-strip">
             ${stats.perMember
-              .map(
-                (m) => `<span class="access-chip"><b>${esc(m.player)}</b> ${esc(m.planLabel)} · ${m.reach} games</span>`
-              )
+              .map((m) => `<span class="access-chip"><b>${esc(m.player)}</b> ${esc(m.planLabel)} \u00b7 ${m.reach} games</span>`)
               .join('')}
           </div>`
         : ''
@@ -98,85 +164,42 @@ export function drawView(state, rerender) {
         : ''
     }
 
-    ${
-      result
-        ? `
-    <section class="result" id="result">
-      <div class="result-label">This cycle&rsquo;s pick</div>
-      <div class="result-card">
-        ${result.game.img ? `<img class="result-art" src="${esc(result.game.img)}" alt="${esc(result.game.title)}" />` : ''}
-        <div class="result-body">
-          <h3 class="result-title">${esc(result.game.title)}</h3>
-          ${result.game.dev ? `<div class="result-dev">${esc(result.game.dev)}</div>` : ''}
-          <div class="result-tags">
-            ${result.game.cats.map((c) => `<span class="tag">${esc(labelOf(c))}</span>`).join('')}
-            ${result.game.play?.coop ? '<span class="tag coop">Co-op</span>' : ''}
-            ${result.game.tiers.map((t) => `<span class="tag tier">${esc(TIER_LABEL[t] || t)}</span>`).join('')}
-          </div>
-          ${result.game.blurb ? `<p class="result-blurb">${esc(result.game.blurb)}</p>` : ''}
-          <ul class="result-why">
-            ${result.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}
-          </ul>
-          <div class="result-pool">Drawn from ${result.poolSize} eligible games.</div>
-        </div>
-      </div>
-      <div class="result-actions">
-        <button id="lock" class="submit">Lock it in &amp; post to Discord</button>
-        <button id="redraw" class="submit ghost">Draw again</button>
-      </div>
-      <p id="d-status" class="status"></p>
-    </section>`
-        : `
     <section class="block submit-block">
       <button id="spin" class="submit big" ${!pool.length ? 'disabled' : ''}>
         ${pool.length ? 'Draw this cycle\u2019s game' : 'Nothing everyone can play \u2014 loosen the vetoes'}
       </button>
-    </section>`
-    }
+      <p class="fine">One spin. It posts to #league and locks the cycle.</p>
+      <p id="d-status" class="status"></p>
+    </section>
   `;
 
   const wire = (root) => {
     root.querySelector('#spin')?.addEventListener('click', async (e) => {
       const btn = e.currentTarget;
+      const status = root.querySelector('#d-status');
       btn.disabled = true;
+
       // Rattle through candidates so the draw feels like a draw.
       for (let i = 0; i < 18; i++) {
-        const peek = pool[Math.floor(Math.random() * pool.length)];
-        btn.textContent = peek.title.slice(0, 34);
+        btn.textContent = pool[Math.floor(Math.random() * pool.length)].title.slice(0, 34);
         await new Promise((r) => setTimeout(r, 55 + i * 6));
       }
-      state.draw = drawGame(pool, rules);
-      rerender();
-    });
 
-    root.querySelector('#redraw')?.addEventListener('click', () => {
-      state.draw = null;
-      rerender();
-    });
-
-    root.querySelector('#lock')?.addEventListener('click', async (e) => {
-      const status = root.querySelector('#d-status');
-      e.currentTarget.disabled = true;
-      e.currentTarget.textContent = 'Posting\u2026';
       try {
-        state.cycle = await lockInDraw({
-          game: state.draw.game,
-          poolSize: state.draw.poolSize,
-          reasons: state.draw.reasons,
-          drawnBy: state.myInterests.player || 'someone',
-        });
-        state.draw = null;
-        state.tab = 'checkin';
+        state.cycle = await drawCycle(state.myInterests.player || 'someone');
         rerender();
       } catch (err) {
+        if (err.status === 409 && err.cycle) {
+          state.cycle = err.cycle;
+          rerender();
+          return;
+        }
         status.textContent = err.message;
         status.className = 'status err';
-        e.currentTarget.disabled = false;
-        e.currentTarget.textContent = 'Lock it in & post to Discord';
+        btn.disabled = false;
+        btn.textContent = 'Draw this cycle\u2019s game';
       }
     });
-
-    on(root, '.result-art', 'error', (e) => e.currentTarget.remove());
   };
 
   return { html, wire };
