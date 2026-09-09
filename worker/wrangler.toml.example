@@ -1,0 +1,15 @@
+name = "checkpoint-webhook"
+main = "index.js"
+compatibility_date = "2025-01-01"
+
+# Set DISCORD_WEBHOOK_URL as an encrypted Secret in the Cloudflare dashboard
+# (or: npx wrangler secret put DISCORD_WEBHOOK_URL). Never commit it.
+
+[vars]
+ALLOWED_ORIGIN = "https://solrooster.github.io,http://localhost:5175"
+
+# Stores each member's interests + the current cycle's pick.
+# Create with: npx wrangler kv namespace create CLUB
+[[kv_namespaces]]
+binding = "CLUB"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
