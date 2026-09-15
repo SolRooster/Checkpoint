@@ -1,0 +1,12 @@
+name = "checkpoint-webhook"
+main = "index.js"
+compatibility_date = "2025-01-01"
+account_id = "cd2ae5c2e6ee66b6c6bc9ce4c311c778"
+
+[vars]
+ALLOWED_ORIGIN = "https://solrooster.github.io,http://localhost:5175"
+
+# Interests + current cycle + archived picks.
+[[kv_namespaces]]
+binding = "CLUB"
+id = "27e8bd293e7645f9891c6d2ea401434e"

@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite --port 5175",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy:worker": "wrangler deploy --config worker/wrangler.toml"
   },
   "devDependencies": {
-    "vite": "^5.4.0"
+    "vite": "^5.4.0",
+    "wrangler": "^4.129.1"
   }
 }

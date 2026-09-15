@@ -61,14 +61,36 @@ async function handleCatalog(ctx, cors) {
   });
 }
 
-async function readInterests(env) {
+// KV list is eventually consistent, so a fresh save can be missing from it for a
+// while. The draw reads this single aggregate key instead; per-player keys stay
+// as the source of truth to rebuild from.
+const ALL_KEY = 'interests:all';
+
+async function rebuildInterests(env) {
   const list = await env.CLUB.list({ prefix: 'interest:' });
   const members = [];
   for (const key of list.keys) {
     const raw = await env.CLUB.get(key.name);
     if (raw) members.push(JSON.parse(raw));
   }
+  await env.CLUB.put(ALL_KEY, JSON.stringify(members));
   return members;
+}
+
+async function readInterests(env) {
+  const raw = await env.CLUB.get(ALL_KEY);
+  if (raw) return JSON.parse(raw);
+  return rebuildInterests(env);
+}
+
+async function saveInterest(env, record) {
+  await env.CLUB.put(`interest:${record.player.toLowerCase()}`, JSON.stringify(record));
+
+  const members = await readInterests(env);
+  const next = members.filter((m) => m.player.toLowerCase() !== record.player.toLowerCase());
+  next.push(record);
+  await env.CLUB.put(ALL_KEY, JSON.stringify(next));
+  return next;
 }
 
 function normalizeInterests(body) {
@@ -126,8 +148,8 @@ export default {
       const body = await request.json().catch(() => null);
       const record = body && normalizeInterests(body);
       if (!record) return json({ error: 'Missing player' }, 400, cors);
-      await env.CLUB.put(`interest:${record.player.toLowerCase()}`, JSON.stringify(record));
-      return json({ ok: true, members: await readInterests(env) }, 200, cors);
+      const members = await saveInterest(env, record);
+      return json({ ok: true, members }, 200, cors);
     }
 
     if (path === '/cycle' && request.method === 'GET') {
