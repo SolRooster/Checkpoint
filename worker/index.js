@@ -152,6 +152,10 @@ export default {
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 
+    // Commands have to exist before anyone can invoke one, so register on any
+    // request rather than waiting for an interaction. Guarded by a KV version.
+    if (env.DISCORD_BOT_TOKEN && env.CLUB) ctx.waitUntil(ensureCommands(env));
+
     // Discord signs its own requests, so the browser CORS rules don't apply here.
     if (path === '/interactions' && request.method === 'POST') {
       const body = await request.text();
@@ -159,7 +163,6 @@ export default {
       if (!ok) return new Response('Bad signature', { status: 401 });
 
       const interaction = JSON.parse(body);
-      if (interaction.type !== 1) ctx.waitUntil(ensureCommands(env));
 
       const result = await handleInteraction(interaction, env, ctx, {
         getCatalog: async () => {
