@@ -9,6 +9,7 @@
 
 import { buildCatalog } from '../shared/catalog.js';
 import { buildRules, buildPool, drawGame, slimGame } from '../shared/draw.js';
+import { PLANS } from '../shared/taxonomy.js';
 import { verifyRequest, handleInteraction, ensureCommands } from './discord.js';
 
 const CATALOG_TTL = 60 * 60 * 12;
@@ -119,9 +120,12 @@ function normalizeInterests(body) {
     if (value === 'in' || value === 'no') appetite[clip(cat, 60)] = value;
   }
 
+  // Validate against the shared plan list, never a copy of it.
+  const plan = PLANS.some((p) => p.id === body.plan) ? body.plan : 'ultimate';
+
   return {
     player,
-    plan: ['ultimate', 'pc', 'console'].includes(body.plan) ? body.plan : 'ultimate',
+    plan,
     eaPlay: !!body.eaPlay,
     appetite,
     era: body.era === 'recent' ? 'recent' : 'any',
