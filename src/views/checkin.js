@@ -243,6 +243,11 @@ function buildPayload(form, pick) {
   return {
     player: form.player.trim(),
     stateLabel: `${state.label} \u00b7 ${state.tag}`,
+    stateId: state.id,
+    hours: form.hours === '' ? null : Number(form.hours),
+    far: form.marker.trim(),
+    take: form.take.trim(),
+    spoilers: form.spoilers,
     headline: state.blurb,
     color: parseInt(state.accent.slice(1), 16),
     game: pick.title,

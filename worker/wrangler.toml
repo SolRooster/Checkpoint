@@ -5,6 +5,8 @@ account_id = "cd2ae5c2e6ee66b6c6bc9ce4c311c778"
 
 [vars]
 ALLOWED_ORIGIN = "https://solrooster.github.io,http://localhost:5175"
+DISCORD_APP_ID = "1549644004121911386"
+DISCORD_PUBLIC_KEY = "279b41474597e69038390a38e7dceb93b886c591200acf19e12b8f80775cc803"
 
 # Interests + current cycle + archived picks.
 [[kv_namespaces]]

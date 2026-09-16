@@ -9,6 +9,7 @@
 
 import { buildCatalog } from '../shared/catalog.js';
 import { buildRules, buildPool, drawGame, slimGame } from '../shared/draw.js';
+import { verifyRequest, handleInteraction, ensureCommands } from './discord.js';
 
 const CATALOG_TTL = 60 * 60 * 12;
 
@@ -93,6 +94,22 @@ async function saveInterest(env, record) {
   return next;
 }
 
+// Check-ins are grouped per cycle so a redraw starts everyone fresh.
+const checkinKey = (cycleId) => `checkins:${cycleId}`;
+
+async function readCheckins(env, cycleId) {
+  const raw = await env.CLUB.get(checkinKey(cycleId));
+  return raw ? JSON.parse(raw) : [];
+}
+
+async function saveCheckin(env, cycleId, record) {
+  const all = await readCheckins(env, cycleId);
+  const next = all.filter((c) => c.player.toLowerCase() !== record.player.toLowerCase());
+  next.push(record);
+  await env.CLUB.put(checkinKey(cycleId), JSON.stringify(next));
+  return next;
+}
+
 function normalizeInterests(body) {
   const player = clip(body.player, 60);
   if (!player) return null;
@@ -134,6 +151,32 @@ export default {
     const path = new URL(request.url).pathname.replace(/\/+$/, '') || '/';
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+
+    // Discord signs its own requests, so the browser CORS rules don't apply here.
+    if (path === '/interactions' && request.method === 'POST') {
+      const body = await request.text();
+      const ok = await verifyRequest(request, body, env.DISCORD_PUBLIC_KEY);
+      if (!ok) return new Response('Bad signature', { status: 401 });
+
+      const interaction = JSON.parse(body);
+      if (interaction.type !== 1) ctx.waitUntil(ensureCommands(env));
+
+      const result = await handleInteraction(interaction, env, ctx, {
+        getCatalog: async () => {
+          const cached = await getCatalogCached(ctx);
+          return cached ? JSON.parse(cached.body) : null;
+        },
+        readInterests,
+        readCheckins,
+        saveCheckin,
+      });
+
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     if (origin && !allowed.includes(origin)) return json({ error: 'Origin not allowed' }, 403, cors);
 
     if (path === '/catalog' && request.method === 'GET') return handleCatalog(ctx, cors);
@@ -252,6 +295,22 @@ export default {
         value: clip(f.value, 900) || '\u200b',
         inline: !!f.inline,
       }));
+
+      // Record it too, so /status sees web and bot check-ins alike.
+      const currentRaw = await env.CLUB?.get('cycle:current');
+      if (currentRaw && body.stateId) {
+        const current = JSON.parse(currentRaw);
+        await saveCheckin(env, current.drawnAt, {
+          player,
+          userId: null,
+          state: clip(body.stateId, 40),
+          hours: typeof body.hours === 'number' ? body.hours : null,
+          far: clip(body.far, 120),
+          take: clip(body.take, 400),
+          spoilers: clip(body.spoilers, 20) || 'mine',
+          at: new Date().toISOString(),
+        });
+      }
 
       const ok = await postToDiscord(env, {
         embeds: [
