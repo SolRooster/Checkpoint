@@ -164,17 +164,40 @@ export function drawView(state, rerender) {
         : ''
     }
 
-    <section class="block submit-block">
-      <button id="spin" class="submit big" ${!pool.length ? 'disabled' : ''}>
+    <section class="block gate">
+      <div class="gate-head">Before you spin</div>
+      <ul class="gate-points">
+        <li><b>This is binding.</b> One draw per cycle &mdash; there are no rerolls.</li>
+        <li>It posts to <b>#league</b> the moment it lands.</li>
+        <li>Only the <b>${rules.memberCount}</b> ${rules.memberCount === 1 ? 'person' : 'people'} below are accounted for.
+            Anyone who hasn't weighed in yet gets no say.</li>
+      </ul>
+      ${
+        rules.memberCount
+          ? `<div class="gate-roster">${stats.perMember
+              .map((m) => `<span class="access-chip"><b>${esc(m.player)}</b> ${esc(m.planLabel)}</span>`)
+              .join('')}</div>`
+          : ''
+      }
+      <label class="sub-label" for="confirm-draw">Type <b>DRAW</b> to unlock the spin</label>
+      <input id="confirm-draw" class="text-input" type="text" autocomplete="off"
+        placeholder="DRAW" maxlength="10" />
+      <button id="spin" class="submit big" disabled>
         ${pool.length ? 'Draw this cycle\u2019s game' : 'Nothing everyone can play \u2014 loosen the vetoes'}
       </button>
-      <p class="fine">One spin. It posts to #league and locks the cycle.</p>
       <p id="d-status" class="status"></p>
     </section>
   `;
 
   const wire = (root) => {
-    root.querySelector('#spin')?.addEventListener('click', async (e) => {
+    const spin = root.querySelector('#spin');
+
+    // Typing the word is the only guard available without Discord identity.
+    root.querySelector('#confirm-draw')?.addEventListener('input', (e) => {
+      spin.disabled = e.target.value.trim().toUpperCase() !== 'DRAW' || !pool.length;
+    });
+
+    spin?.addEventListener('click', async (e) => {
       const btn = e.currentTarget;
       const status = root.querySelector('#d-status');
       btn.disabled = true;

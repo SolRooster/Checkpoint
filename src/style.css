@@ -121,6 +121,26 @@ body {
 }
 .access-chip b { color: var(--ink); }
 
+/* draw confirmation gate */
+.gate {
+  background: var(--panel);
+  border: 1px solid #ff7b6b44;
+  border-left: 3px solid #ff7b6b;
+  border-radius: 14px;
+  padding: 22px;
+  text-align: left;
+}
+.gate-head {
+  font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: #ff9d90; margin-bottom: 12px;
+}
+.gate-points { margin: 0 0 16px; padding-left: 18px; font-size: 13px; color: var(--muted); line-height: 1.7; }
+.gate-points b { color: var(--ink); }
+.gate-roster { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.gate .sub-label { margin-bottom: 8px; }
+.gate .text-input { margin-bottom: 14px; letter-spacing: 0.15em; text-transform: uppercase; }
+.gate .submit { width: 100%; max-width: none; }
+
 /* draw rules */
 .rules {
   display: flex; gap: 22px; align-items: center;
