@@ -111,6 +111,23 @@ body {
   font-size: 11px; color: #6cb8ff; border: 1px solid #6cb8ff44;
   border-radius: 999px; padding: 2px 9px;
 }
+.member.is-me { border-color: var(--accent); }
+.you-tag {
+  font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: #14161c; background: var(--accent); border-radius: 999px; padding: 2px 8px;
+}
+
+.identity {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--panel); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px; padding: 12px 14px; margin-bottom: 8px;
+}
+.identity-name { font-size: 16px; font-weight: 700; }
+.identity-tag {
+  font-size: 11px; color: #6cb8ff; border: 1px solid #6cb8ff44;
+  border-radius: 999px; padding: 2px 9px;
+}
 
 .chip.ea { margin-top: 10px; }
 

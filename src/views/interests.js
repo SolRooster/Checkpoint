@@ -15,9 +15,19 @@ export function interestsView(state, rerender) {
     </section>
 
     <section class="block">
-      <label class="field-label" for="i-player">Your name</label>
-      <input id="i-player" class="text-input" type="text" maxlength="60" autocomplete="off"
-        placeholder="Your name or Discord handle" value="${esc(mine.player)}" />
+      ${
+        state.identity
+          ? `<div class="field-label">You</div>
+             <div class="identity">
+               <span class="identity-name">${esc(state.identity.name)}</span>
+               <span class="identity-tag">linked from Discord</span>
+             </div>
+             <p class="hint">This edits <b>your</b> entry. Saving again updates it &mdash; it can't create a second one.</p>`
+          : `<label class="field-label" for="i-player">Your name</label>
+             <p class="hint">Use the exact name you used before, or run <b>/interests</b> in #league for a personal link that fills this in for you.</p>
+             <input id="i-player" class="text-input" type="text" maxlength="60" autocomplete="off"
+               placeholder="Your name or Discord handle" value="${esc(mine.player)}" />`
+      }
     </section>
 
     <section class="block">
@@ -108,9 +118,10 @@ export function interestsView(state, rerender) {
             const nos = Object.entries(m.appetite || {})
               .filter(([, v]) => v === 'no')
               .map(([c]) => GENRES.find((g) => g.cat === c)?.label || c);
+            const isMe = state.identity && m.userId && m.userId === state.identity.userId;
             return `
-            <div class="member">
-              <b>${esc(m.player)}</b>
+            <div class="member${isMe ? ' is-me' : ''}">
+              <b>${esc(m.player)}</b>${isMe ? '<span class="you-tag">you</span>' : ''}
               <span class="member-plan">${esc(planLabel(m.plan))}${m.eaPlay ? ' + EA Play' : ''}</span>
               ${loves.length ? `<span class="tag-in">into: ${esc(loves.join(', '))}</span>` : ''}
               ${nos.length ? `<span class="tag-no">passes: ${esc(nos.join(', '))}</span>` : ''}
@@ -163,11 +174,6 @@ export function interestsView(state, rerender) {
       const status = root.querySelector('#i-status');
       if (!mine.player.trim()) {
         status.textContent = 'Add your name first.';
-        status.className = 'status err';
-        return;
-      }
-      if (!mine.plan) {
-        status.textContent = 'Pick which Game Pass you have.';
         status.className = 'status err';
         return;
       }

@@ -5,9 +5,14 @@
 
 import { STATES, SPOILERS, getState } from '../shared/states.js';
 import { buildRules, buildPool, drawGame, slimGame } from '../shared/draw.js';
-import { planLabel } from '../shared/taxonomy.js';
+import { planLabel, genreLabel } from '../shared/taxonomy.js';
 
 const API = 'https://discord.com/api/v10';
+const APP_URL = 'https://solrooster.github.io/Checkpoint/';
+
+// A personal link carries who you are, so nobody has to type their name and
+// risk creating a second copy of themselves.
+const LINK_TTL = 60 * 60 * 24 * 30;
 
 // Bump when the command list changes so the Worker re-registers them.
 export const COMMANDS_VERSION = 3;
@@ -243,16 +248,51 @@ async function runCheckin(env, interaction, deps) {
   ]);
 }
 
-function interestsReply(members, interaction) {
-  const me = members.find((m) => m.player.toLowerCase() === displayName(interaction).toLowerCase());
-  const mine = me
-    ? `You're set as **${planLabel(me.plan)}**${me.eaPlay ? ' + EA Play' : ''}. Re-save any time to change it.`
-    : "You haven't set yours yet \u2014 the draw can't account for you until you do.";
+function interestsSummary(me) {
+  if (!me) return null;
 
-  return reply(
-    `**Set your interests here:** https://solrooster.github.io/Checkpoint/\n${mine}`,
-    EPHEMERAL
-  );
+  const picks = (want) =>
+    Object.entries(me.appetite || {})
+      .filter(([, v]) => v === want)
+      .map(([c]) => genreLabel(c));
+
+  const into = picks('in');
+  const passes = picks('no');
+
+  return [
+    `**Access** \u2014 ${planLabel(me.plan)}${me.eaPlay ? ' + EA Play' : ''}`,
+    `**Into** \u2014 ${into.length ? into.join(', ') : 'nothing flagged'}`,
+    `**Hard passes** \u2014 ${passes.length ? passes.join(', ') : 'none'}`,
+    `**Age** \u2014 ${me.era === 'recent' ? 'recent releases only' : 'anything'}`,
+    `**Together** \u2014 ${me.together === 'coop' ? 'prefers co-op' : "doesn't matter"}`,
+    me.note ? `**Note** \u2014 ${me.note}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+async function interestsReply(env, interaction, deps) {
+  const userId = interaction.member?.user?.id || interaction.user?.id;
+  const name = displayName(interaction);
+
+  const token = crypto.randomUUID().replace(/-/g, '');
+  await env.CLUB.put(`link:${token}`, JSON.stringify({ userId, name }), {
+    expirationTtl: LINK_TTL,
+  });
+
+  const members = await deps.readInterests(env);
+  const me =
+    members.find((m) => m.userId && m.userId === userId) ||
+    members.find((m) => m.player.toLowerCase() === name.toLowerCase());
+
+  const summary = interestsSummary(me);
+  const link = `${APP_URL}?k=${token}`;
+
+  const body = me
+    ? `**Your interests, ${me.player}:**\n${summary}\n\n[Open your settings](${link}) \u2014 this link is yours, so it edits your entry instead of making a new one.`
+    : `You haven't set your interests yet, so the draw can't account for you.\n\n[Set them here](${link}) \u2014 this link is yours; your name is filled in automatically.`;
+
+  return reply(body, EPHEMERAL);
 }
 
 export async function handleInteraction(interaction, env, ctx, deps) {
@@ -267,7 +307,7 @@ export async function handleInteraction(interaction, env, ctx, deps) {
   }
   if (name === 'status') return statusReply(env, deps);
   if (name === 'checkin') return runCheckin(env, interaction, deps);
-  if (name === 'interests') return interestsReply(await deps.readInterests(env), interaction);
+  if (name === 'interests') return interestsReply(env, interaction, deps);
 
   return reply('Unknown command.', EPHEMERAL);
 }

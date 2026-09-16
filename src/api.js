@@ -7,7 +7,20 @@ const DEV = import.meta.env.DEV;
 const LOCAL_INTERESTS = 'checkpoint_interests_local';
 const LOCAL_CYCLE = 'checkpoint_cycle_local';
 const CATALOG_CACHE = 'checkpoint_catalog';
+const LINK_KEY = 'checkpoint_link';
 const CATALOG_TTL = 1000 * 60 * 60 * 12;
+
+export const getLinkToken = () => localStorage.getItem(LINK_KEY) || '';
+export const setLinkToken = (t) => localStorage.setItem(LINK_KEY, t);
+export const clearLinkToken = () => localStorage.removeItem(LINK_KEY);
+
+// Resolves the personal link from /interests into a Discord identity.
+export async function getMe(token) {
+  if (DEV || !token) return null;
+  const res = await fetch(`${WORKER_URL}/me?k=${encodeURIComponent(token)}`);
+  if (!res.ok) return null;
+  return res.json();
+}
 
 const readLocal = (key, fallback) => {
   try {
@@ -65,7 +78,8 @@ export async function saveInterests(record) {
     localStorage.setItem(LOCAL_INTERESTS, JSON.stringify(all));
     return all;
   }
-  return (await post('/interests', record)).members || [];
+  const token = getLinkToken();
+  return (await post('/interests', token ? { ...record, k: token } : record)).members || [];
 }
 
 export async function getCycle() {

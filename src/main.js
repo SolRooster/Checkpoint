@@ -1,7 +1,7 @@
 import './style.css';
 import { CLUB } from './club.js';
 import { blankInterests } from './interests.js';
-import { getCatalog, getInterests, getCycle, isDev } from './api.js';
+import { getCatalog, getInterests, getCycle, getMe, getLinkToken, setLinkToken, isDev } from './api.js';
 import { interestsView } from './views/interests.js';
 import { drawView } from './views/draw.js';
 import { checkinView } from './views/checkin.js';
@@ -12,6 +12,7 @@ const savedPlayer = localStorage.getItem('checkpoint_player') || '';
 const state = {
   tab: 'interests',
   members: [],
+  identity: null,
   catalog: null,
   catalogError: null,
   cycle: null,
@@ -85,15 +86,34 @@ async function loadCatalog() {
 async function boot() {
   render();
 
-  const [members, cycle] = await Promise.all([
+  // A ?k= link from /interests identifies the member, so nobody types a name
+  // and accidentally becomes a second person.
+  const fromUrl = new URLSearchParams(location.search).get('k');
+  if (fromUrl) {
+    setLinkToken(fromUrl);
+    history.replaceState({}, '', location.pathname);
+  }
+
+  const [members, cycle, me] = await Promise.all([
     getInterests().catch(() => []),
     getCycle().catch(() => null),
+    getMe(getLinkToken()).catch(() => null),
   ]);
   state.members = members;
   state.cycle = cycle;
 
-  const mine = members.find((m) => m.player.toLowerCase() === savedPlayer.toLowerCase());
-  if (mine) state.myInterests = { ...blankInterests(mine.player), ...mine };
+  if (me?.identity) {
+    state.identity = me.identity;
+    state.myInterests = me.member
+      ? { ...blankInterests(me.identity.name), ...me.member, player: me.identity.name }
+      : blankInterests(me.identity.name);
+    state.checkin.player = me.identity.name;
+    localStorage.setItem('checkpoint_player', me.identity.name);
+  } else {
+    const mine = members.find((m) => m.player.toLowerCase() === savedPlayer.toLowerCase());
+    if (mine) state.myInterests = { ...blankInterests(mine.player), ...mine };
+  }
+
   if (cycle) state.tab = 'checkin';
 
   render();

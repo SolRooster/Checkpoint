@@ -95,6 +95,46 @@ async function saveInterest(env, record) {
   return next;
 }
 
+const readLink = async (env, token) => {
+  if (!token || !env.CLUB) return null;
+  const raw = await env.CLUB.get(`link:${clip(token, 64)}`);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed?.userId && parsed?.name ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const findMember = (members, identity) =>
+  members.find((m) => m.userId && m.userId === identity.userId) ||
+  members.find((m) => m.player.toLowerCase() === identity.name.toLowerCase());
+
+// A linked save replaces whatever that Discord user saved before, even if they
+// renamed themselves, so one person can never become two entries.
+async function saveLinkedInterest(env, record, identity) {
+  const members = await readInterests(env);
+  const previous = findMember(members, identity);
+
+  if (previous && previous.player.toLowerCase() !== record.player.toLowerCase()) {
+    await env.CLUB.delete(`interest:${previous.player.toLowerCase()}`);
+  }
+
+  const merged = { ...record, userId: identity.userId };
+  await env.CLUB.put(`interest:${merged.player.toLowerCase()}`, JSON.stringify(merged));
+
+  const next = members.filter(
+    (m) =>
+      !(m.userId && m.userId === identity.userId) &&
+      m.player.toLowerCase() !== merged.player.toLowerCase() &&
+      (!previous || m.player.toLowerCase() !== previous.player.toLowerCase())
+  );
+  next.push(merged);
+  await env.CLUB.put(ALL_KEY, JSON.stringify(next));
+  return next;
+}
+
 // Check-ins are grouped per cycle so a redraw starts everyone fresh.
 const checkinKey = (cycleId) => `checkins:${cycleId}`;
 
@@ -131,6 +171,7 @@ function normalizeInterests(body) {
     era: body.era === 'recent' ? 'recent' : 'any',
     together: body.together === 'coop' ? 'coop' : 'any',
     note: clip(body.note, 200),
+    userId: body.userId || null,
     updated: new Date().toISOString(),
   };
 }
@@ -193,12 +234,26 @@ export default {
       return json({ members: await readInterests(env) }, 200, cors);
     }
 
+    if (path === '/me' && request.method === 'GET') {
+      if (!env.CLUB) return json({ error: 'KV not bound' }, 501, cors);
+      const identity = await readLink(env, new URL(request.url).searchParams.get('k'));
+      if (!identity) return json({ error: 'That link has expired. Run /interests again.' }, 404, cors);
+      const member = findMember(await readInterests(env), identity) || null;
+      return json({ identity, member }, 200, cors);
+    }
+
     if (path === '/interests' && request.method === 'POST') {
       if (!env.CLUB) return json({ error: 'KV not bound' }, 501, cors);
       const body = await request.json().catch(() => null);
-      const record = body && normalizeInterests(body);
+      if (!body) return json({ error: 'Invalid JSON' }, 400, cors);
+
+      const identity = await readLink(env, body.k);
+      const record = normalizeInterests(identity ? { ...body, player: identity.name } : body);
       if (!record) return json({ error: 'Missing player' }, 400, cors);
-      const members = await saveInterest(env, record);
+
+      const members = identity
+        ? await saveLinkedInterest(env, record, identity)
+        : await saveInterest(env, record);
       return json({ ok: true, members }, 200, cors);
     }
 
