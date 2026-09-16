@@ -22,7 +22,7 @@ export function interestsView(state, rerender) {
 
     <section class="block">
       <div class="field-label">Which Game Pass do you have?</div>
-      <p class="hint">The draw only offers games <b>everyone</b> can already play. Nobody gets asked to buy anything.</p>
+      <p class="hint">The draw only offers games <b>everyone</b> can already play. Nobody gets asked to buy anything. On PlayStation or without Game Pass? Say so &mdash; you still get a vote on genres.</p>
       <div class="chips">
         ${PLANS.map(
           (p) => `

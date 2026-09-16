@@ -159,6 +159,7 @@ body {
   background: #f5b94214; border: 1px solid #f5b94244; border-radius: 10px;
   padding: 12px 14px; font-size: 13px; color: var(--ink); margin-top: 16px;
 }
+.warn.offplat { background: #6cb8ff14; border-color: #6cb8ff44; line-height: 1.6; }
 
 .submit.big { font-size: 18px; padding: 18px 32px; max-width: 420px; }
 

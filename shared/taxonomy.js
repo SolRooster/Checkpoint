@@ -21,17 +21,23 @@ export const GENRES = [
 
 // What matters for the draw is which catalog lists a person can reach.
 // Ultimate covers console + PC; EA Play is asked separately so nobody's
-// access is assumed on their behalf.
+// access is assumed on their behalf. An empty tier list means Game Pass
+// doesn't reach them at all — they still get a vote, but they can't
+// constrain a catalog they aren't part of.
 export const PLANS = [
   { id: 'ultimate', label: 'Game Pass Ultimate', hint: 'Console + PC', tiers: ['console', 'pc'] },
   { id: 'pc', label: 'PC Game Pass', hint: 'PC only', tiers: ['pc'] },
-  { id: 'console', label: 'Console only', hint: 'Xbox, no PC', tiers: ['console'] },
+  { id: 'console', label: 'Xbox console only', hint: 'Xbox, no PC', tiers: ['console'] },
+  { id: 'other', label: 'PlayStation / no Game Pass', hint: "I'll sort my own copy", tiers: [] },
 ];
 
 export const tiersFor = (member) => {
   const plan = PLANS.find((p) => p.id === member?.plan) || PLANS[0];
+  if (!plan.tiers.length) return [];
   return member?.eaPlay ? [...plan.tiers, 'eaPlay'] : [...plan.tiers];
 };
+
+export const onGamePass = (member) => tiersFor(member).length > 0;
 
 export const planLabel = (id) => PLANS.find((p) => p.id === id)?.label || id;
 

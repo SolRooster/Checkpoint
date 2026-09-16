@@ -1,4 +1,4 @@
-import { genreLabel, tiersFor, planLabel } from './taxonomy.js';
+import { genreLabel, tiersFor, planLabel, onGamePass } from './taxonomy.js';
 
 const RECENT_YEARS = 3;
 
@@ -28,8 +28,10 @@ export function buildRules(members) {
     vetoes,
     loves,
     coopVotes,
-    // Each member's own reach. A game qualifies only if it lands inside everyone's.
-    access: members.map((m) => ({ player: m.player, plan: m.plan, tiers: tiersFor(m) })),
+    // Only Game Pass members can constrain a Game Pass catalog. Everyone else
+    // still votes on genre, but sources their own copy.
+    access: members.filter(onGamePass).map((m) => ({ player: m.player, plan: m.plan, tiers: tiersFor(m) })),
+    offPlatform: members.filter((m) => !onGamePass(m)).map((m) => ({ player: m.player, plan: m.plan })),
     recentOnly: recentVotes > 0 && recentVotes === members.length,
   };
 }
@@ -96,9 +98,14 @@ function explain(game, rules) {
   if (!reasons.length) {
     reasons.push("Nobody vetoed it and nobody asked for it \u2014 pure luck of the draw.");
   }
-  if (rules.memberCount) reasons.push('Everyone can already play it.');
+  if (rules.access.length) reasons.push('Everyone on Game Pass can already play it.');
+  if (rules.offPlatform?.length) {
+    reasons.push(
+      `${rules.offPlatform.map((m) => m.player).join(', ')} \u2014 not on Game Pass, you'll need your own copy.`
+    );
+  }
 
-  return reasons.slice(0, 4);
+  return reasons.slice(0, 5);
 }
 
 export function poolStats(games, rules) {

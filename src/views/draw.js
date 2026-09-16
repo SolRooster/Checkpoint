@@ -149,6 +149,17 @@ export function drawView(state, rerender) {
     </section>
 
     ${
+      rules.offPlatform?.length
+        ? `<p class="warn offplat">
+            <b>${rules.offPlatform.map((m) => esc(m.player)).join(', ')}</b>
+            ${rules.offPlatform.length === 1 ? "isn't" : "aren't"} on Game Pass.
+            Their genre votes still count, but the pick won't be free for them &mdash;
+            they'll need to source it themselves.
+          </p>`
+        : ''
+    }
+
+    ${
       rules.memberCount > 1
         ? `<div class="access-strip">
             ${stats.perMember
