@@ -145,7 +145,11 @@ async function readCheckins(env, cycleId) {
 
 async function saveCheckin(env, cycleId, record) {
   const all = await readCheckins(env, cycleId);
-  const next = all.filter((c) => c.player.toLowerCase() !== record.player.toLowerCase());
+  const next = all.filter((c) =>
+    record.userId && c.userId
+      ? c.userId !== record.userId
+      : c.player.toLowerCase() !== record.player.toLowerCase()
+  );
   next.push(record);
   await env.CLUB.put(checkinKey(cycleId), JSON.stringify(next));
   return next;
@@ -348,7 +352,10 @@ export default {
       const body = await request.json().catch(() => null);
       if (!body) return json({ error: 'Invalid JSON' }, 400, cors);
 
-      const player = clip(body.player, 60);
+      // A linked check-in is stamped with the Discord identity, so repeat
+      // check-ins update one entry instead of stacking up.
+      const identity = await readLink(env, body.k);
+      const player = identity ? identity.name : clip(body.player, 60);
       const stateLabel = clip(body.stateLabel, 40);
       if (!player || !stateLabel) return json({ error: 'Missing player or state' }, 400, cors);
 
@@ -364,7 +371,7 @@ export default {
         const current = JSON.parse(currentRaw);
         await saveCheckin(env, current.drawnAt, {
           player,
-          userId: null,
+          userId: identity?.userId || null,
           state: clip(body.stateId, 40),
           hours: typeof body.hours === 'number' ? body.hours : null,
           far: clip(body.far, 120),

@@ -131,7 +131,8 @@ export async function postCheckIn(payload) {
     console.info('[checkpoint dev] check-in would post to Discord:', payload);
     return true;
   }
-  await post('/checkin', payload);
+  const token = getLinkToken();
+  await post('/checkin', token ? { ...payload, k: token } : payload);
   return true;
 }
 

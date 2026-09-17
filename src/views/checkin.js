@@ -68,9 +68,19 @@ export function checkinView(state, rerender) {
     </p>
 
     <section class="block">
-      <label class="field-label" for="player">Who are you?</label>
-      <input id="player" class="text-input" type="text" maxlength="60" autocomplete="off"
-        placeholder="Your name or Discord handle" value="${esc(form.player)}" />
+      ${
+        state.identity
+          ? `<div class="field-label">You</div>
+             <div class="identity">
+               <span class="identity-name">${esc(state.identity.name)}</span>
+               <span class="identity-tag">linked from Discord</span>
+             </div>
+             <p class="hint">Checking in again updates your entry rather than adding another.</p>`
+          : `<label class="field-label" for="player">Who are you?</label>
+             <p class="hint">Run <b>/interests</b> in #league for a personal link, and this fills in automatically.</p>
+             <input id="player" class="text-input" type="text" maxlength="60" autocomplete="off"
+               placeholder="Your name or Discord handle" value="${esc(form.player)}" />`
+      }
     </section>
 
     <section class="block">
@@ -193,7 +203,7 @@ export function checkinView(state, rerender) {
 
     root.querySelector('#submit')?.addEventListener('click', async (e) => {
       const status = root.querySelector('#status');
-      if (!form.player.trim()) {
+      if (!state.identity && !form.player.trim()) {
         status.textContent = 'Add your name first.';
         status.className = 'status err';
         return;
